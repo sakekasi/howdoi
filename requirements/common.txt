@@ -10,3 +10,4 @@ appdirs==1.4.4
 keep==2.9
 rich==12.6.0
 colorama==0.4.4
+hypothesis==6.125.1

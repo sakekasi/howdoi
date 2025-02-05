@@ -361,12 +361,20 @@ def _get_answer(args, link):  # pylint: disable=too-many-branches
     else:
         logging.info('Using cached page: %s', link)
 
-    html = pq(page)
+    answer, tags = _get_answer_from_html(page, args['all'])
+    args['tags'] = tags
+    return answer
 
+
+Answer = str
+Tags = t.List[str]
+
+def _get_answer_from_html(html: str, display_full_answer: bool) -> t.Tuple[Answer, Tags]:
+    html = pq(html)
     first_answer = html('.answercell').eq(0) or html('.answer').eq(0)
 
     instructions = first_answer.find('pre') or first_answer.find('code')
-    args['tags'] = [t.text for t in html('.post-tag')]
+    tags = [t.text for t in html('.post-tag')]
 
     # make decision on answer body class.
     if first_answer.find(".js-post-body"):
@@ -375,27 +383,27 @@ def _get_answer(args, link):  # pylint: disable=too-many-branches
         # rollback to post-text class
         answer_body_cls = ".post-text"
 
-    if not instructions and not args['all']:
+    if not instructions and not display_full_answer:
         logging.info('No code sample found, returning entire answer')
         text = get_text(first_answer.find(answer_body_cls).eq(0))
-    elif args['all']:
+    elif display_full_answer:
         logging.info('Returning entire answer')
         texts = []
         for html_tag in first_answer.items(f'{answer_body_cls} > *'):
             current_text = get_text(html_tag)
             if current_text:
                 if html_tag[0].tag in ['pre', 'code']:
-                    texts.append(_format_output(args, current_text))
+                    texts.append(_format_output(display_full_answer, current_text))
                 else:
                     texts.append(current_text)
         text = '\n'.join(texts)
     else:
-        text = _format_output(args, get_text(instructions.eq(0)))
+        text = _format_output(display_full_answer, get_text(instructions.eq(0)))
     if text is None:
         logging.info('%sAnswer was empty%s', RED, END_FORMAT)
         text = NO_ANSWER_MSG
     text = text.strip()
-    return text
+    return text, tags
 
 
 def _get_links_with_cache(query):
