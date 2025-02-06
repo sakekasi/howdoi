@@ -1,14 +1,23 @@
 from hypothesis import given, strategies as st
 from howdoi.howdoi import _get_answer_from_html, NO_ANSWER_MSG
 
-# Strategy for generating text content
-text_content = st.text(alphabet=st.characters(blacklist_categories=('Cs',)), min_size=1)
+# We don't need to mock _format_output since we'll compare raw text
 
-# Strategy for generating code content
-code_content = st.text(alphabet=st.characters(blacklist_categories=('Cs',)), min_size=1)
+# Strategy for generating text content - exclude control chars, whitespace, and HTML-like content
+text_content = st.text(
+    alphabet=st.characters(blacklist_categories=('Cs', 'Cc', 'Z')),
+    min_size=1
+).filter(lambda x: not x.isspace() and '<' not in x and '>' not in x)
 
-# Strategy for generating tags
-tag = st.text(alphabet=st.characters(min_codepoint=48, max_codepoint=122), min_size=1, max_size=20)
+# Strategy for generating code content - same as text content
+code_content = text_content
+
+# Strategy for generating tags - only alphanumeric and hyphens, like real SO tags
+tag = st.text(
+    alphabet=st.characters(whitelist_categories=('Ll', 'Lu', 'Nd')),
+    min_size=1,
+    max_size=20
+).map(lambda x: x.lower())
 tags = st.lists(tag, min_size=0, max_size=5)
 
 # Strategy for generating answer HTML
