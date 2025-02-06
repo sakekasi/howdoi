@@ -1,5 +1,5 @@
 from hypothesis import given, strategies as st
-from howdoi.howdoi import _get_answer_from_html
+from howdoi.howdoi import _get_answer_from_html, NO_ANSWER_MSG
 
 # Strategy for generating text content
 text_content = st.text(alphabet=st.characters(blacklist_categories=('Cs',)), min_size=1)
@@ -24,6 +24,7 @@ def answer_html(draw):
     # Generate main answer content
     has_code = draw(st.booleans())
     answer_parts = []
+    expected_answer_parts = []
     
     if has_code:
         # Add some code blocks
@@ -32,15 +33,18 @@ def answer_html(draw):
             code = draw(code_content)
             code_type = draw(st.sampled_from(['pre', 'code']))
             answer_parts.append(f'<{code_type}>{code}</{code_type}>')
+            expected_answer_parts.append(code)
             
         # Maybe add some text between code blocks
         if draw(st.booleans()):
             text = draw(text_content)
             answer_parts.append(f'<p>{text}</p>')
+            expected_answer_parts.append(text)
     else:
         # Just text content
         text = draw(text_content)
         answer_parts.append(f'<p>{text}</p>')
+        expected_answer_parts.append(text)
     
     # Build the answer HTML
     answer_body_cls = answer_body_cls.lstrip('.')
@@ -55,10 +59,17 @@ def answer_html(draw):
     </div>
     '''
     
-    return answer_html
+    # For display_full_answer=True, we expect all parts joined with newlines
+    expected_full_answer = '\n'.join(expected_answer_parts).strip()
+    # For display_full_answer=False, we expect just the first code block if it exists,
+    # otherwise the first text block
+    expected_short_answer = (expected_answer_parts[0] if has_code else expected_answer_parts[0]).strip()
+    
+    return (expected_short_answer, expected_full_answer, question_tags, answer_html)
 
 @given(answer_html(), st.booleans())
-def test_get_answer_from_html(html, display_full_answer):
+def test_get_answer_from_html(generated, display_full_answer):
+    expected_short_answer, expected_full_answer, expected_tags, html = generated
     answer, tags = _get_answer_from_html(html, display_full_answer)
     
     # Basic validation
@@ -66,9 +77,12 @@ def test_get_answer_from_html(html, display_full_answer):
     assert isinstance(tags, list)
     assert all(isinstance(tag, str) for tag in tags)
     
-    # Answer should not be empty
-    assert answer != ''
+    # Answer should not be empty unless it's NO_ANSWER_MSG
+    assert answer != '' or answer == NO_ANSWER_MSG
     
-    # If no answer found, should return NO_ANSWER_MSG
-    if answer == 'NO_ANSWER_MSG':
-        assert not any(tag in html for tag in ['<pre>', '<code>'])
+    # Tags should match exactly
+    assert tags == expected_tags
+    
+    # Answer should match expected answer based on display_full_answer
+    expected = expected_full_answer if display_full_answer else expected_short_answer
+    assert answer.strip() == expected.strip()
