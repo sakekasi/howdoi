@@ -12,6 +12,7 @@ import gc
 gc.disable()
 
 import argparse
+import typing as t
 import inspect
 import json
 import os
@@ -204,7 +205,9 @@ def _add_links_to_text(element):
 
     for hyperlink in hyperlinks:
         pquery_object = pq(hyperlink)
-        href = hyperlink.attrib['href']
+        href = hyperlink.attrib.get('href')
+        if not href:
+            continue
         copy = pquery_object.text()
         if copy == href:
             replacement = copy
@@ -373,7 +376,6 @@ def _get_answer_from_html(html: str, display_full_answer: bool) -> t.Tuple[Answe
     html = pq(html)
     first_answer = html('.answercell').eq(0) or html('.answer').eq(0)
 
-    instructions = first_answer.find('pre') or first_answer.find('code')
     tags = [t.text for t in html('.post-tag')]
 
     # make decision on answer body class.
@@ -383,7 +385,13 @@ def _get_answer_from_html(html: str, display_full_answer: bool) -> t.Tuple[Answe
         # rollback to post-text class
         answer_body_cls = ".post-text"
 
-    if not instructions and not display_full_answer:
+    # Find all code blocks
+    code_blocks = []
+    for html_tag in first_answer.items(f'{answer_body_cls} > *'):
+        if html_tag[0].tag in ['pre', 'code']:
+            code_blocks.append(html_tag)
+
+    if not code_blocks and not display_full_answer:
         logging.info('No code sample found, returning entire answer')
         text = get_text(first_answer.find(answer_body_cls).eq(0))
     elif display_full_answer:
@@ -391,15 +399,12 @@ def _get_answer_from_html(html: str, display_full_answer: bool) -> t.Tuple[Answe
         texts = []
         for html_tag in first_answer.items(f'{answer_body_cls} > *'):
             current_text = get_text(html_tag)
-            if current_text:
-                if html_tag[0].tag in ['pre', 'code']:
-                    texts.append(_format_output(display_full_answer, current_text))
-                else:
-                    texts.append(current_text)
+            if current_text and not current_text.isspace():
+                texts.append(current_text)
         text = '\n'.join(texts)
     else:
-        text = _format_output(display_full_answer, get_text(instructions.eq(0)))
-    if text is None:
+        text = get_text(code_blocks[0])
+    if not text or text.isspace():
         logging.info('%sAnswer was empty%s', RED, END_FORMAT)
         text = NO_ANSWER_MSG
     text = text.strip()
